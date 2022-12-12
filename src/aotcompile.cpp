@@ -74,7 +74,6 @@ STATISTIC(CreateNativeGlobals, "Number of globals compiled for jl_create_native"
 template<class T> // for GlobalObject's
 static T *addComdat(T *G)
 {
-#if defined(_OS_WINDOWS_)
     if (!G->isDeclaration()) {
         // add __declspec(dllexport) to everything marked for export
         if (G->getLinkage() == GlobalValue::ExternalLinkage)
@@ -82,7 +81,6 @@ static T *addComdat(T *G)
         else
             G->setDLLStorageClass(GlobalValue::DefaultStorageClass);
     }
-#endif
     return G;
 }
 
@@ -388,15 +386,16 @@ void *jl_create_native_impl(jl_array_t *methods, LLVMOrcThreadSafeModuleRef llvm
     CreateNativeGlobals += gvars.size();
 
     //Safe b/c context is locked by params
-#if defined(_OS_WINDOWS_) && defined(_CPU_X86_64_)
-    // setting the function personality enables stack unwinding and catching exceptions
-    // so make sure everything has something set
-    Type *T_int32 = Type::getInt32Ty(clone.getModuleUnlocked()->getContext());
-    Function *juliapersonality_func =
-       Function::Create(FunctionType::get(T_int32, true),
-           Function::ExternalLinkage, "__julia_personality", clone.getModuleUnlocked());
-    juliapersonality_func->setDLLStorageClass(GlobalValue::DLLImportStorageClass);
-#endif
+    Function *juliapersonality_func = nullptr;
+    auto TT = Triple(clone.getModuleUnlocked()->getTargetTriple());
+    if (TT.isOSWindows() && TT.getArch() == Triple::ArchType::x86_64) {
+        // setting the function personality enables stack unwinding and catching exceptions
+        // so make sure everything has something set
+        Type *T_int32 = Type::getInt32Ty(clone.getModuleUnlocked()->getContext());
+        juliapersonality_func = Function::Create(FunctionType::get(T_int32, true),
+            Function::ExternalLinkage, "__julia_personality", clone.getModuleUnlocked());
+        juliapersonality_func->setDLLStorageClass(GlobalValue::DLLImportStorageClass);
+    }
 
     // move everything inside, now that we've merged everything
     // (before adding the exported headers)
@@ -407,11 +406,11 @@ void *jl_create_native_impl(jl_array_t *methods, LLVMOrcThreadSafeModuleRef llvm
                 G.setLinkage(Function::InternalLinkage);
                 makeSafeName(G);
                 addComdat(&G);
-#if defined(_OS_WINDOWS_) && defined(_CPU_X86_64_)
-                // Add unwind exception personalities to functions to handle async exceptions
-                if (Function *F = dyn_cast<Function>(&G))
-                    F->setPersonalityFn(juliapersonality_func);
-#endif
+                if (juliapersonality_func) {
+                    if (auto F = dyn_cast<Function>(&G)) {
+                        F->setPersonalityFn(juliapersonality_func);
+                    }
+                }
             }
         }
     }
@@ -492,24 +491,22 @@ void jl_dump_native_impl(void *native_code,
     TheTriple.setObjectFormat(Triple::MachO);
     TheTriple.setOS(llvm::Triple::MacOSX);
 #endif
+    Optional<Reloc::Model> reloc;
+    if (TheTriple.isOSLinux() || TheTriple.isOSFreeBSD())
+        reloc = Reloc::PIC_;
+    CodeModel::Model cm = CodeModel::Small;
+    if (TheTriple.isPPC()) {
+        // On PPC the small model is limited to 16bit offsets
+        cm = CodeModel::Medium;
+    }
     std::unique_ptr<TargetMachine> TM(
         jl_ExecutionEngine->getTarget().createTargetMachine(
             TheTriple.getTriple(),
             jl_ExecutionEngine->getTargetCPU(),
             jl_ExecutionEngine->getTargetFeatureString(),
             jl_ExecutionEngine->getTargetOptions(),
-#if defined(_OS_LINUX_) || defined(_OS_FREEBSD_)
-            Reloc::PIC_,
-#else
-            Optional<Reloc::Model>(),
-#endif
-#if defined(_CPU_PPC_) || defined(_CPU_PPC64_)
-            // On PPC the small model is limited to 16bit offsets
-            CodeModel::Medium,
-#else
-            // Use small model so that we can use signed 32bits offset in the function and GV tables
-            CodeModel::Small,
-#endif
+            reloc,
+            cm,
             CodeGenOpt::Aggressive // -O3 TODO: respect command -O0 flag?
             ));
 

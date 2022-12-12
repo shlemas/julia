@@ -920,13 +920,11 @@ void CloneCtx::fix_inst_uses()
 template<typename T>
 inline T *CloneCtx::add_comdat(T *G) const
 {
-#if defined(_OS_WINDOWS_)
     // add __declspec(dllexport) to everything marked for export
     if (G->getLinkage() == GlobalValue::ExternalLinkage)
         G->setDLLStorageClass(GlobalValue::DLLExportStorageClass);
     else
         G->setDLLStorageClass(GlobalValue::DefaultStorageClass);
-#endif
     return G;
 }
 

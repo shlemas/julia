@@ -150,13 +150,11 @@ GlobalVariable *LowerPTLS::create_aliased_global(Type *T, StringRef name) const
 template<typename T>
 inline T *LowerPTLS::add_comdat(T *G) const
 {
-#if defined(_OS_WINDOWS_)
     // add __declspec(dllexport) to everything marked for export
     if (G->getLinkage() == GlobalValue::ExternalLinkage)
         G->setDLLStorageClass(GlobalValue::DLLExportStorageClass);
     else
         G->setDLLStorageClass(GlobalValue::DefaultStorageClass);
-#endif
     return G;
 }
 
@@ -225,6 +223,7 @@ void LowerPTLS::fix_pgcstack_use(CallInst *pgcstack, Function *pgcstack_getter, 
         }
     }
 
+    auto TT = Triple(M->getTargetTriple());
     if (imaging_mode) {
         if (jl_tls_elf_support) {
             // if (offset != 0)
@@ -267,18 +266,18 @@ void LowerPTLS::fix_pgcstack_use(CallInst *pgcstack, Function *pgcstack_getter, 
         auto getter = new LoadInst(T_pgcstack_getter, pgcstack_func_slot, "", false, pgcstack);
         getter->setMetadata(llvm::LLVMContext::MD_tbaa, tbaa_const);
         getter->setMetadata(llvm::LLVMContext::MD_invariant_load, MDNode::get(pgcstack->getContext(), None));
-#if defined(_OS_DARWIN_)
-        auto key = new LoadInst(getSizeTy(pgcstack->getContext()), pgcstack_key_slot, "", false, pgcstack);
-        key->setMetadata(llvm::LLVMContext::MD_tbaa, tbaa_const);
-        key->setMetadata(llvm::LLVMContext::MD_invariant_load, MDNode::get(pgcstack->getContext(), None));
-        auto new_pgcstack = CallInst::Create(FT_pgcstack_getter, getter, {key}, "", pgcstack);
-        new_pgcstack->takeName(pgcstack);
-        pgcstack->replaceAllUsesWith(new_pgcstack);
-        pgcstack->eraseFromParent();
-        pgcstack = new_pgcstack;
-#else
-        pgcstack->setCalledFunction(pgcstack->getFunctionType(), getter);
-#endif
+        if (TT.isOSDarwin()) {
+            auto key = new LoadInst(getSizeTy(pgcstack->getContext()), pgcstack_key_slot, "", false, pgcstack);
+            key->setMetadata(llvm::LLVMContext::MD_tbaa, tbaa_const);
+            key->setMetadata(llvm::LLVMContext::MD_invariant_load, MDNode::get(pgcstack->getContext(), None));
+            auto new_pgcstack = CallInst::Create(FT_pgcstack_getter, getter, {key}, "", pgcstack);
+            new_pgcstack->takeName(pgcstack);
+            pgcstack->replaceAllUsesWith(new_pgcstack);
+            pgcstack->eraseFromParent();
+            pgcstack = new_pgcstack;
+        } else {
+            pgcstack->setCalledFunction(pgcstack->getFunctionType(), getter);
+        }
         set_pgcstack_attrs(pgcstack);
     }
     else if (jl_tls_offset != -1) {
@@ -292,17 +291,17 @@ void LowerPTLS::fix_pgcstack_use(CallInst *pgcstack, Function *pgcstack_getter, 
         jl_pgcstack_getkey(&f, &k);
         Constant *val = ConstantInt::get(getSizeTy(pgcstack->getContext()), (uintptr_t)f);
         val = ConstantExpr::getIntToPtr(val, T_pgcstack_getter);
-#if defined(_OS_DARWIN_)
-        assert(sizeof(k) == sizeof(uintptr_t));
-        Constant *key = ConstantInt::get(getSizeTy(pgcstack->getContext()), (uintptr_t)k);
-        auto new_pgcstack = CallInst::Create(FT_pgcstack_getter, val, {key}, "", pgcstack);
-        new_pgcstack->takeName(pgcstack);
-        pgcstack->replaceAllUsesWith(new_pgcstack);
-        pgcstack->eraseFromParent();
-        pgcstack = new_pgcstack;
-#else
-        pgcstack->setCalledFunction(pgcstack->getFunctionType(), val);
-#endif
+        if (TT.isOSDarwin()) {
+            assert(sizeof(k) == sizeof(uintptr_t));
+            Constant *key = ConstantInt::get(getSizeTy(pgcstack->getContext()), (uintptr_t)k);
+            auto new_pgcstack = CallInst::Create(FT_pgcstack_getter, val, {key}, "", pgcstack);
+            new_pgcstack->takeName(pgcstack);
+            pgcstack->replaceAllUsesWith(new_pgcstack);
+            pgcstack->eraseFromParent();
+            pgcstack = new_pgcstack;
+        } else {
+            pgcstack->setCalledFunction(pgcstack->getFunctionType(), val);
+        }
         set_pgcstack_attrs(pgcstack);
     }
 }
@@ -320,10 +319,10 @@ bool LowerPTLS::run(bool *CFGModified)
             tbaa_gcframe = tbaa_make_child_with_context(M->getContext(), "jtbaa_gcframe").first;
 
             FT_pgcstack_getter = pgcstack_getter->getFunctionType();
-#if defined(_OS_DARWIN_)
-            assert(sizeof(jl_pgcstack_key_t) == sizeof(uintptr_t));
-            FT_pgcstack_getter = FunctionType::get(FT_pgcstack_getter->getReturnType(), {getSizeTy(M->getContext())}, false);
-#endif
+            if (Triple(M->getTargetTriple()).isOSDarwin()) {
+                assert(sizeof(jl_pgcstack_key_t) == sizeof(uintptr_t));
+                FT_pgcstack_getter = FunctionType::get(FT_pgcstack_getter->getReturnType(), {getSizeTy(M->getContext())}, false);
+            }
             T_pgcstack_getter = FT_pgcstack_getter->getPointerTo();
             T_pppjlvalue = cast<PointerType>(FT_pgcstack_getter->getReturnType());
             if (imaging_mode) {

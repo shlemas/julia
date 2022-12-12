@@ -2080,11 +2080,7 @@ orc::ThreadSafeModule jl_create_llvm_module(StringRef name, orc::ThreadSafeConte
     // imaging mode. The structure of v4 is slightly nicer for debugging JIT
     // code.
     if (!m->getModuleFlag("Dwarf Version")) {
-        int dwarf_version = 4;
-#ifdef _OS_DARWIN_
-        if (imaging_mode)
-            dwarf_version = 2;
-#endif
+        int dwarf_version = triple.isOSDarwin() && imaging_mode ? 2 : 4;
         m->addModuleFlag(llvm::Module::Warning, "Dwarf Version", dwarf_version);
     }
     if (!m->getModuleFlag("Debug Info Version"))
@@ -2092,12 +2088,12 @@ orc::ThreadSafeModule jl_create_llvm_module(StringRef name, orc::ThreadSafeConte
             llvm::DEBUG_METADATA_VERSION);
     m->setDataLayout(DL);
     m->setTargetTriple(triple.str());
-
-#if defined(_OS_WINDOWS_) && !defined(_CPU_X86_64_) && JL_LLVM_VERSION >= 130000
     // tell Win32 to assume the stack is always 16-byte aligned,
     // and to ensure that it is 16-byte aligned for out-going calls,
     // to ensure compatibility with GCC codes
-    m->setOverrideStackAlignment(16);
+#if JL_LLVM_VERSION >= 130000
+    if (triple.isOSWindows() && triple.getArch() != Triple::x86_64)
+        m->setOverrideStackAlignment(16);
 #endif
 #if defined(JL_DEBUG_BUILD) && JL_LLVM_VERSION >= 130000
     m->setStackProtectorGuard("global");
@@ -6751,16 +6747,17 @@ static jl_llvm_functions_t
     else
         funcName << "japi1_";
     const char* unadorned_name = ctx.name;
-#if defined(_OS_LINUX_)
-    if (unadorned_name[0] == '@')
-        unadorned_name++;
-#endif
+    //Safe because params holds ctx lock
+    Module *M = TSM.getModuleUnlocked();
+    auto TT = Triple(M->getTargetTriple());
+    if (TT.isOSLinux()) {
+        if (unadorned_name[0] == '@')
+            unadorned_name++;
+    }
     funcName << unadorned_name << "_" << jl_atomic_fetch_add(&globalUniqueGeneratedNames, 1);
     declarations.specFunctionObject = funcName.str();
 
     // allocate Function declarations and wrapper objects
-    //Safe because params holds ctx lock
-    Module *M = TSM.getModuleUnlocked();
     jl_debugcache_t debuginfo;
     debuginfo.initialize(M);
     jl_returninfo_t returninfo = {};

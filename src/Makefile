@@ -498,7 +498,7 @@ clang-tidy-%: $(SRCDIR)/%.cpp $(build_shlibdir)/libImplicitAtomicsPlugin.$(SHLIB
 tidysrc: $(addprefix clang-tidy-,$(filter-out $(basename $(SKIP_IMPLICIT_ATOMICS)),$(CODEGEN_SRCS) $(SRCS)))
 analyzesrc: $(addprefix clang-sa-,$(CODEGEN_SRCS) $(SRCS))
 analyzegc: $(addprefix clang-sagc-,$(filter-out $(basename $(SKIP_GC_CHECK)),$(CODEGEN_SRCS) $(SRCS)))
-analyzegc: analyzesrc tidysrc # TODO: remove me (depended on by CI currently)
+#analyzegc: analyzesrc tidysrc # TODO: remove me (depended on by CI currently)
 analyze: analyzesrc analyzegc tidysrc
 
 clean-analyzegc:

@@ -2575,10 +2575,12 @@ import .Mod.maybe_undef as mu
 Mod.def()
 @test mu === 0
 
-using .Mod: func as f
-@test f(10) == 21
-@test !@isdefined(func)
-@test_throws ErrorException("error in method definition: function Mod.func must be explicitly imported to be extended") eval(:(f(x::Int) = x))
+module Mod3
+using ..Mod: func as f
+end
+@test Mod3.f(10) == 21
+@test !@isdefined(Mod3.func)
+@test_throws ErrorException("error in method definition: function Mod3.f must be explicitly imported to be extended") eval(Mod3, :(f(x::Int) = x))
 
 z = 42
 import .z as also_z

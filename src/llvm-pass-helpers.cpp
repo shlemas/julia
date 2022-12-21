@@ -232,7 +232,7 @@ namespace jl_intrinsics {
             auto intrinsic = Function::Create(
                 FunctionType::get(
                     Type::getVoidTy(context.getLLVMContext()),
-                    {},
+                    {JuliaType::get_ppjlvalue_ty(context.getLLVMContext())},
                     false),
                 Function::ExternalLinkage,
                 SAFEPOINT_NAME);

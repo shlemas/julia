@@ -543,7 +543,7 @@ static void jl_dump_asm_internal(
         raw_ostream &rstream,
         const char* asm_variant,
         const char* debuginfo,
-        bool binary);
+        bool binary) JL_NOTSAFEPOINT;
 
 // This isn't particularly fast, but neither is printing assembly, and they're only used for interactive mode
 static uint64_t compute_obj_symsize(object::SectionRef Section, uint64_t offset)

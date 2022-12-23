@@ -620,7 +620,7 @@ JL_NO_ASAN static void ctx_switch(jl_task_t *lastt)
     sanitizer_finish_switch_fiber(ptls->previous_task, jl_atomic_load_relaxed(&ptls->current_task));
 }
 
-JL_DLLEXPORT void jl_switch(void)
+JL_DLLEXPORT void jl_switch(void) JL_NOTSAFEPOINT
 {
     jl_task_t *ct = jl_current_task;
     jl_ptls_t ptls = ct->ptls;
@@ -681,13 +681,13 @@ JL_DLLEXPORT void jl_switch(void)
     (void)ct;
 #endif
 
-    jl_gc_unsafe_leave(ptls, gc_state);
     sig_atomic_t other_defer_signal = ptls->defer_signal;
     ptls->defer_signal = defer_signal;
     if (other_defer_signal && !defer_signal)
         jl_sigint_safepoint(ptls);
 
     JL_PROBE_RT_RUN_TASK(ct);
+    jl_gc_unsafe_leave(ptls, gc_state);
 }
 
 JL_DLLEXPORT void jl_switchto(jl_task_t **pt)

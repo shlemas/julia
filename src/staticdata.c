@@ -497,7 +497,7 @@ static void jl_load_sysimg_so(void)
 
 #define NBOX_C 1024
 
-static int jl_needs_serialization(jl_serializer_state *s, jl_value_t *v)
+static int jl_needs_serialization(jl_serializer_state *s, jl_value_t *v) JL_NOTSAFEPOINT
 {
     // ignore items that are given a special relocation representation
     if (s->incremental && jl_object_in_image(v))

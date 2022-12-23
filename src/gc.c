@@ -360,7 +360,7 @@ static void finalize_object(arraylist_t *list, jl_value_t *o,
 
 // The first two entries are assumed to be empty and the rest are assumed to
 // be pointers to `jl_value_t` objects
-static void jl_gc_push_arraylist(jl_task_t *ct, arraylist_t *list)
+static void jl_gc_push_arraylist(jl_task_t *ct, arraylist_t *list) JL_NOTSAFEPOINT
 {
     void **items = list->items;
     items[0] = (void*)JL_GC_ENCODE_PUSHARGS(list->len - 2);
@@ -371,7 +371,7 @@ static void jl_gc_push_arraylist(jl_task_t *ct, arraylist_t *list)
 // Same assumption as `jl_gc_push_arraylist`. Requires the finalizers lock
 // to be hold for the current thread and will release the lock when the
 // function returns.
-static void jl_gc_run_finalizers_in_list(jl_task_t *ct, arraylist_t *list)
+static void jl_gc_run_finalizers_in_list(jl_task_t *ct, arraylist_t *list) JL_NOTSAFEPOINT_LEAVE
 {
     // Avoid marking `ct` as non-migratable via an `@async` task (as noted in the docstring
     // of `finalizer`) in a finalizer:
@@ -395,7 +395,7 @@ static void jl_gc_run_finalizers_in_list(jl_task_t *ct, arraylist_t *list)
 
 static uint64_t finalizer_rngState[4];
 
-void jl_rng_split(uint64_t to[4], uint64_t from[4]);
+void jl_rng_split(uint64_t to[4], uint64_t from[4]) JL_NOTSAFEPOINT;
 
 JL_DLLEXPORT void jl_gc_init_finalizer_rng_state(void)
 {
